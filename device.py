@@ -1,5 +1,6 @@
 import os
 import sys
+import argparse
 import pika
 import pickle
 import time
@@ -17,6 +18,7 @@ class Device():
         self.connection = pika.BlockingConnection(pika.ConnectionParameters(RABBITMQ_SERVER_IP, RABBITMQ_SERVER_PORT, 'vhost', self.credentials))
         self.channel = self.connection.channel()
 
+        self.device_name = device_name
         self.queue_name = device_name
         self.smartQ_email = smartQ_email
         
@@ -39,7 +41,7 @@ class Device():
             with open(f'{file_name}', 'wb') as f:
                 f.write(contents)
 
-            model = ['python', 'Inference_worker.py', file_name, 'inference_image.jpg']
+            model = ['python', 'Inference_worker.py', file_name, 'image.jpg']
 
             result_message = {}
             result_message['email'] = self.smartQ_email
@@ -47,6 +49,7 @@ class Device():
             result_message['model_name'] = file_name
 
             start_time = time.time()
+            results = ''
             try:
                 results = subprocess.check_output(model, shell=False, encoding='UTF-8')
             except :
@@ -54,10 +57,12 @@ class Device():
             end_time = time.time()
             
             result_message['work_time'] = end_time - start_time
-
+            
+            print(results)
             tmp = results.split('^')
             result_message[tmp[0]] = tmp[1]
             result_message[tmp[2]] = tmp[3]
+            
 
             print('result : ', result_message)
 
@@ -65,7 +70,7 @@ class Device():
             os.remove(f'{file_name}')
 
         elif header == 'image':
-            with open(f'{file_name}.jpg', 'wb') as f:
+            with open(f'{file_name}', 'wb') as f:
                 f.write(contents)
             print("image saved")
 
@@ -80,7 +85,7 @@ class Device():
         
 
     def publish(self, message):
-        self.basic_publish(
+        self.channel.basic_publish(
             exchange='output',
             routing_key='toMongoDB',
             body=pickle.dumps(message)
@@ -89,8 +94,14 @@ class Device():
 
 if __name__ == '__main__':
     
-    smartQ_email = sys.argv[1]
-    device_name = sys.argv[2]
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--smartq_id', help='smartq_id argument')
+    parser.add_argument('--device_name', help='device_name argument')
+    
+    args, unknown = parser.parse_known_args()
+    
+    smartQ_email = args.smartq_id
+    device_name = args.device_name
 
     process = Device(device_name=device_name, smartQ_email=smartQ_email)
     process.consume()
